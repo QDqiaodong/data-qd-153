@@ -1,0 +1,83 @@
+{
+  "tree": {
+    "events": [
+      {
+        "id": "pump",
+        "numerator": 1,
+        "denominator": 10
+      },
+      {
+        "id": "valve",
+        "numerator": 1,
+        "denominator": 5
+      },
+      {
+        "id": "sensor",
+        "numerator": 3,
+        "denominator": 10
+      },
+      {
+        "id": "interlock",
+        "numerator": 0,
+        "denominator": 1
+      }
+    ],
+    "gates": [
+      {
+        "id": "pv_and",
+        "op": "AND",
+        "inputs": [
+          "pump",
+          "valve"
+        ]
+      },
+      {
+        "id": "ps_and",
+        "op": "AND",
+        "inputs": [
+          "pump",
+          "sensor"
+        ]
+      },
+      {
+        "id": "top",
+        "op": "OR",
+        "inputs": [
+          "pv_and",
+          "ps_and",
+          "interlock"
+        ]
+      }
+    ],
+    "root": "top"
+  },
+  "evidence": [
+    {
+      "node": "interlock",
+      "failed": false
+    }
+  ],
+  "tests": [
+    {
+      "id": "check_pv_and",
+      "node": "pv_and",
+      "cost": 2
+    },
+    {
+      "id": "check_ps_and",
+      "node": "ps_and",
+      "cost": 3
+    },
+    {
+      "id": "check_pump",
+      "node": "pump",
+      "cost": 5
+    },
+    {
+      "id": "check_top",
+      "node": "top",
+      "cost": 9
+    }
+  ],
+  "budget": 20
+}

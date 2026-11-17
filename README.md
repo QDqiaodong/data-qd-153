@@ -52,3 +52,22 @@ query 固定一个已提交代次读取某日分区。完整契约见 docs/contr
 样例树 top=(A AND B) OR (A AND C)。batch1 上报 A 在 [100,190000)、B 在 [80000,175000) 故障，
 全局停机区间 [80000,175000) 跨三天，第2日片段 2200 秒、总停机 95000 秒；batch2 撤回 B 的恢复观测后，
 区间身份变为 [80000,190000)，第2日片段 17200 秒、总停机 110000 秒。树文件与批次文件删除后数据集仍可查询。
+
+# Optimal adaptive fault-diagnosis policy v3
+
+故障调查人员在静态故障树、部分已知节点读数和可付费准确检测清单下，需要先测什么、每个读数后继续测什么。
+`fault-diagnose` 枚举全部基本事件逻辑世界（概率 0 的世界仍是逻辑公民），从联合世界拆分推导检测的
+条件相关性，逐子问题求精确最优自适应策略：正质量子问题最小化精确条件期望费用，零质量子问题最小化
+最坏费用，同值按 test_id 的 UTF-8 字节序决胜；每条逻辑可行路径都必须在预算内确定顶事件，否则
+正常返回 infeasible。完整数据契约见 [docs/contract.md](docs/contract.md)。
+
+```sh
+.venv/bin/fault-diagnose --source fixtures/diagnose/request.json --output run/diagnose.json
+.venv/bin/python -m fault_tree.diagnose --source fixtures/diagnose/request.json --output run/diagnose.json
+```
+
+自制样例含共享 pump 子门 pv_and/ps_and 与概率 0 的 interlock 证据。规划器先测 ps_and：读数为真即
+判定顶事件故障；为假再测 pv_and。报告给出可执行 policy 决策树、精确条件期望费用（247/50）、
+最坏路径费用（5）与条件顶事件故障概率（11/250）。所有概率与期望为约分 Fraction 字符串，
+无采样、无近似、无贪心；输入输出不同路径、原子替换、拒绝符号链接，失败退出 2 且保留旧报告。
+

@@ -10,5 +10,6 @@ dependencies = []
 [project.scripts]
 fault-tree = "fault_tree.cli:main"
 fault-history = "fault_tree.history.cli:main"
+fault-diagnose = "fault_tree.diagnose.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]

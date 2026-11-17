@@ -108,3 +108,95 @@ withdraw 的后三项为 null。summary 为 `{"incident_count","downtime_seconds
 day 为 `{"index","start","end","downtime_seconds","segments"}`，segments 按片段 start/end 排列。
 同一数据集状态下输出字节确定，经临时文件原子替换 FILE；FILE 必须在 dataset 目录外，
 拒绝符号链接与覆盖输入；失败保留既有输出与已提交代次。
+
+# Optimal adaptive fault-diagnosis policy v3
+
+故障调查人员持有静态故障树、部分已知节点读数与可付费的准确检测清单，需要知道先测什么、
+每个读数之后继续测什么。`fault-diagnose`（或 `python -m fault_tree.diagnose`）
+生成精确最优的自适应检测决策树；它不拟合事件概率、不修改故障树、不接入设备、不读取停机历史。
+旧 `fault-tree` 与 `fault-history` 入口及契约保持不变。
+
+## 命令与退出码
+
+```sh
+fault-diagnose --source FILE --output FILE
+python -m fault_tree.diagnose --source FILE --output FILE
+```
+
+成功退出 0：报告原子写入 FILE，并把同一份报告打印到 stdout。解析/计算/IO 失败退出 2 且保留原输出；
+`inconsistent_evidence`、`zero_mass_evidence`、`infeasible` 都是正常分析结果，写完整报告且退出 0。
+
+## 输入契约
+
+严格 `{"tree","evidence","tests","budget"}`，沿用 8MB 读取上限，拒绝重复 JSON 键、未知字段、
+非法类型/引用与超界输入；数组顺序不代表优先级，重排不影响 result。
+
+- `tree` 恰为既有 events/gates/root 结构，整体交给既有 `parse_tree` 契约，不放宽任何旧校验：
+  16 个基本事件、100 个门、概率 0..1、ident、引用合法、AND/OR DAG 无环，root 可为事件或门。
+- `evidence` 为 0..116 项 `{"node","failed"}`；node 必须是已声明事件或门且不重复，
+  failed 只能是 JSON 布尔（布尔不冒充整数）。
+- `tests` 为 0..10 项 `{"id","node","cost"}`；id 沿用 ident 规则且在清单内唯一，
+  node 可为任意已声明事件或门；不同 test_id 可检测同一 node，也可检测已有初始证据的 node。
+  cost 是 1..10^9 的整数。
+- `budget` 是 0..10^9 的整数。
+
+## 逻辑世界与精确条件质量
+
+- 逻辑世界是全部 16 个（或实际声明数）基本事件的真假赋值；门值按原 AND/OR DAG 求得。
+  所有检测读取**同一个静态基本事件向量**下某节点的准确布尔，不改变设备状态；共享事件的门读数
+  不是独立随机变量，条件相关性一律从联合世界拆分推导，绝不把清单节点边缘概率再作独立乘积。
+- 符合全部初始 evidence 的世界构成初始支持；其先验质量是各独立基本事件概率（或 1-概率）的乘积。
+  概率恰为 0 或 1 的事件仍保留其逻辑世界：概率 0 不等于逻辑不可能。
+- `logical_worlds` 统计满足证据的逻辑世界数（含零质量世界）；`evidence_probability` 是其总先验质量，
+  用约分 Fraction 字符串表示（整数写 `"0"`、`"1"`）。
+- `root_failure_probability` 是给定初始证据的精确条件顶事件故障概率。
+
+## 子问题、规范目标与预算可行性
+
+子问题由（已见节点读数、已用 test_id 集合、剩余预算）共同决定，内部表示为
+（可行世界位掩码、已用检测位掩码、剩余预算）。在逻辑支持非空且 root 未确定时：
+
+1. 候选动作是尚未使用且 cost 不超过剩余预算的 test；检测必须在看到读数前选择，不能按真实世界
+   事后挑最便宜路径，也不能只检查平均费用是否低于预算。
+2. 把支持按该 test 的实际读数拆成 true/false 两个子分支；逻辑不可能的结果分支写 `null`，
+   逻辑可行但零质量的分支必须保留完整合规策略。每个非空子分支都必须能在扣除本次 cost 的剩余
+   预算内确定 root，否则该候选检测不可用于合规策略。
+3. 正质量子问题：动作值 = 本次 cost + 各分支后续期望费用按该分支条件质量加权之和；零质量分支
+   对期望贡献 0 但仍须有可行续策。按最小动作值选择，同值按 test_id 的 UTF-8 字节序取最小，
+   不用浮点容差，不以最坏费用打破正质量同值。
+4. 逻辑非空但质量为 0 的子问题：动作值 = 本次 cost + 非空子分支后续最坏费用的最大值；
+   同值同样按 test_id UTF-8 字节序取最小，然后递归应用同一规则。
+5. root 在当前所有逻辑可行世界中已同值时立即停止为叶；未确定时不能提前给结论。
+   一条路径同一 test_id 至多执行一次。无任何合规策略时返回 `infeasible`。
+
+规划全程使用公共分母下的整数单位做精确比较，仅在序列化时还原 Fraction；不使用模拟采样、
+近似概率、贪心信息增益或固定检测排序。
+
+## 状态判定与输出契约
+
+状态判断严格按以下先后顺序：
+
+1. 逻辑世界数为 0 → `inconsistent_evidence`（初始证据逻辑矛盾）。
+2. 否则先验总质量为 0 → `zero_mass_evidence`（逻辑非空但零质量，不规划，禁止除以 0）。
+3. 否则按预算能否规划 → `optimal` 或 `infeasible`。
+
+报告严格为 `{"schema_version":3,"source_sha256","result"}`，source_sha256 是完整输入原字节 SHA256。
+result 恰含 `status,logical_worlds,evidence_probability,root_failure_probability,
+expected_cost,worst_cost,policy`：
+
+- 前两个状态（inconsistent/zero_mass）的后四个分析字段均为 null；zero_mass 仍给出
+  logical_worlds 与 `"0"` 的 evidence_probability。
+- infeasible 给出精确 root_failure_probability，但 expected_cost、worst_cost、policy 为 null。
+- optimal 的 `expected_cost` 是初始证据条件下所选规范策略的期望累计费用（不含免费初始证据），
+  `worst_cost` 是所选策略在所有逻辑可行执行路径（含零质量路径）上的最大累计费用，非负整数；
+  最坏费用是所选规范策略的统计值，不是另一个优化目标。
+- 初始支持已确定 root 且质量为正时立即为叶，expected_cost `"0"`、worst_cost 0；
+  质量为 0 时即使 root 已确定仍按 zero_mass_evidence 返回。
+- policy 叶节点 `{"kind":"leaf","failed":布尔}`；检测节点
+  `{"kind":"test","test_id":ID,"on_false":子树或null,"on_true":子树或null}`，
+  两个分支语义按实际读数固定，不能交换。
+
+同语义输入重排 tree/evidence/tests 数组不改变 result，但源字节变化会改变 source_sha256；
+同一输入报告字节稳定。输出沿用安全原子替换（临时文件 + os.replace），输入输出不能同路径，
+拒绝输出符号链接；失败退出 2 并保留原输出。
+
