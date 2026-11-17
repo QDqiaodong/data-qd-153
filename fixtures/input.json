@@ -1,0 +1,46 @@
+{
+  "events": [
+    {
+      "id": "A",
+      "numerator": 1,
+      "denominator": 10
+    },
+    {
+      "id": "B",
+      "numerator": 1,
+      "denominator": 5
+    },
+    {
+      "id": "C",
+      "numerator": 3,
+      "denominator": 10
+    }
+  ],
+  "gates": [
+    {
+      "id": "AB",
+      "op": "AND",
+      "inputs": [
+        "A",
+        "B"
+      ]
+    },
+    {
+      "id": "AC",
+      "op": "AND",
+      "inputs": [
+        "A",
+        "C"
+      ]
+    },
+    {
+      "id": "top",
+      "op": "OR",
+      "inputs": [
+        "AB",
+        "AC"
+      ]
+    }
+  ],
+  "root": "top"
+}
