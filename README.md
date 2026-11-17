@@ -13,6 +13,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip install --no-build-isolation --no-deps .
 .venv/bin/python -m pip check
 .venv/bin/fault-tree --source fixtures/input.json --output run/report.json
+.venv/bin/fault-factor --source fixtures/factor/request.json --output run/factor.json
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
@@ -71,3 +72,22 @@ query 固定一个已提交代次读取某日分区。完整契约见 docs/contr
 最坏路径费用（5）与条件顶事件故障概率（11/250）。所有概率与期望为约分 Fraction 字符串，
 无采样、无近似、无贪心；输入输出不同路径、原子替换、拒绝符号链接，失败退出 2 且保留旧报告。
 
+
+# Joint conditional risk table v4
+
+可靠性数据团队需要把基本事件先验、跨事件势函数、共享 AND/OR 门结构和节点读数合成一张
+完整条件联合概率表，供下游风险组合分析直接使用。`fault-factor`（或
+`python -m fault_tree.factor`）按调用方给定的消元次序做精确局部因子乘加，输出指定节点组的
+整组联合分布；它不拟合事件概率、不创建新的自由随机门、不展开全部基本事件世界。
+旧 `fault-tree`、`fault-history`、`fault-diagnose` 三个入口及结果契约保持不变，
+并且仍以实际回归测试驱动。
+
+```sh
+.venv/bin/fault-factor --source fixtures/factor/request.json --output run/factor.json
+.venv/bin/python -m fault_tree.factor --source fixtures/factor/request.json --output run/factor.json
+```
+
+自制样例含共享 `pv_and`/`ps_and` 子门、重叠 scope 的非归一势函数与门/基本事件混合证据，
+query 为两个相关门：N/Z = 10829/65664，联合表四行分别为 112/221、70/221、24/221、15/221。
+所有概率与 normalizer 为约分 Fraction 字符串（整数不写分母）；零概率行保留。完整契约见
+[docs/contract.md](docs/contract.md)。

@@ -1,0 +1,44 @@
+{
+  "tree": {
+    "events": [
+      {"id": "pump", "numerator": 1, "denominator": 10},
+      {"id": "valve", "numerator": 1, "denominator": 5},
+      {"id": "sensor", "numerator": 3, "denominator": 10},
+      {"id": "interlock", "numerator": 1, "denominator": 50}
+    ],
+    "gates": [
+      {"id": "pv_and", "op": "AND", "inputs": ["pump", "valve"]},
+      {"id": "ps_and", "op": "AND", "inputs": ["pump", "sensor"]},
+      {"id": "top", "op": "OR", "inputs": ["pv_and", "ps_and", "interlock"]}
+    ],
+    "root": "top"
+  },
+  "factors": [
+    {
+      "id": "pump_valve_coupling",
+      "scope": ["pump", "valve"],
+      "values": [
+        {"numerator": 1, "denominator": 1},
+        {"numerator": 3, "denominator": 1},
+        {"numerator": 2, "denominator": 1},
+        {"numerator": 5, "denominator": 1}
+      ]
+    },
+    {
+      "id": "sensor_interlock_coupling",
+      "scope": ["sensor", "interlock"],
+      "values": [
+        {"numerator": 1, "denominator": 1},
+        {"numerator": 1, "denominator": 2},
+        {"numerator": 1, "denominator": 2},
+        {"numerator": 4, "denominator": 1}
+      ]
+    }
+  ],
+  "evidence": [
+    {"node": "interlock", "failed": false},
+    {"node": "pump", "failed": true}
+  ],
+  "query": ["pv_and", "ps_and"],
+  "elimination_order": ["interlock", "sensor", "valve", "pump", "top"]
+}

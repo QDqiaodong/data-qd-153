@@ -6,3 +6,6 @@
   再以撤回更正 B 的恢复观测，演示停机区间边界的跨代修正。
 - diagnose/request.json：fault-diagnose 的 {tree,evidence,tests,budget} 自制样例，
   含共享 pump 子门与概率 0 的 interlock 初始证据，演示精确最优自适应检测策略。
+- factor/request.json：fault-factor 的 {tree,factors,evidence,query,elimination_order}
+  自制样例，含共享 pv_and/ps_and 子门、重叠 scope 的非归一势函数、门与基本事件混合证据，
+  query 为两个相关门。旁注 fixture 无真实设备含义。

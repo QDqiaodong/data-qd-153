@@ -200,3 +200,98 @@ expected_cost,worst_cost,policy`：
 同一输入报告字节稳定。输出沿用安全原子替换（临时文件 + os.replace），输入输出不能同路径，
 拒绝输出符号链接；失败退出 2 并保留原输出。
 
+# Joint conditional risk table v4
+
+可靠性数据团队持有静态故障树、跨事件相关势函数、部分节点读数与一个待分析节点组，
+需要一次得到该节点组的**完整条件联合概率表**，供下游风险组合分析直接使用。
+`fault-factor`（或 `python -m fault_tree.factor`）按调用方给定的消元次序做精确局部因子
+乘加，不展开全部基本事件世界；它不拟合事件概率、不修改故障树、不读取停机历史、
+不接入设备。旧 `fault-tree`、`fault-history`、`fault-diagnose` 入口及结果契约保持不变。
+本入口的树契约把基本事件上限放宽到 64，旧入口仍保持 16 事件接受上限。
+
+## 命令与退出码
+
+```sh
+fault-factor --source FILE --output FILE
+python -m fault_tree.factor --source FILE --output FILE
+```
+
+成功退出 0：报告原子写入 FILE，并把同一份报告打印到 stdout（报告字节确定）。
+`zero_model`、`zero_evidence` 是正常业务结果，写完整报告且退出 0。
+解析、结构超界（含 12 变量宽度拒绝）、计算或 IO 失败退出 2 且保留既有输出，
+不留下半份新报告。沿用源字节 SHA256、输入/输出同路径拒绝、输出符号链接拒绝、
+8MB 读取上限、重复 JSON 键拒绝、非有限数值拒绝与原子替换。
+
+## 输入契约
+
+严格 `{"tree","factors","evidence","query","elimination_order"}`，各层拒绝未知字段、
+非法类型、重复 JSON 键与布尔冒充整数。数组顺序不代表优先级：tree/factors/evidence/query
+的语义等价重排不改变 result，但 `elimination_order` 决定 audit 与宽度准入。
+
+- `tree` 恰为 `{"events","gates","root"}`：
+  - `events` 为 1..64 项 `{"id","numerator","denominator"}`，id 唯一且沿用 ident 规则，
+    0<=numerator<=10^9、1<=denominator<=10^9、numerator<=denominator（概率 0..1）。
+  - `gates` 为 0..100 项 `{"id","op","inputs"}`，op 为 `AND`/`OR`，inputs 为 1..5 个
+    不同且已声明的节点；门 id 不得与事件或其他门重复；整图无环。
+  - `root` 为已声明事件或门。**所有**声明的基本事件（含不在 root 祖先中的事件）与
+    所有门都是完整模型与结构审计的一部分。
+  - 其余校验（ident、引用、无环）与 v1 树契约相同；仅事件上限与本入口绑定为 64。
+- `factors` 为 0..128 项 `{"id","scope","values"}`：
+  - `id` 唯一，仅用于输入身份校验，**不参与数值权重**。
+  - `scope` 为 1..8 个不同基本事件 ID 的**有序**数组；其顺序是势表的列坐标。
+  - `values` 恰有 `2**len(scope)` 项 `{"numerator","denominator"}`，非负有理数，
+    分子 0..10^9、分母 1..10^9；允许大于 1 的势值，也允许 scope 重叠。
+  - 行按 scope 原序的二进制字典序解释，**False 先于 True**（首列变化最慢）。
+    只重排 scope 却原样解释 values 会得到不同结果；scope 重排并同步重排 values 结果不变。
+- `evidence` 为 0..164 项 `{"node","failed"}`：node 唯一且为已声明事件或门，
+  failed 为 JSON 布尔。证据只约束输出质量，不改变既定结构宽度准入。
+- `query` 为 1..8 个不同已声明节点（事件或门，不要求含 root，也不要求是叶子）。
+- `elimination_order` 须恰好列出 query 之外的全部事件和门各一次（不漏、不重、不越界）。
+
+## 联合质量与归一化
+
+对基本事件赋值 `x`：未归一化质量 `W(x)` = 各事件 Bernoulli 先验质量之积
+（失败取 p、健康取 1-p）× 全部势函数在 `x` 上的值；门值由同一个 `x` 沿 DAG 确定
+（AND=全真、OR=任一真）。共享门不是独立变量，重复引用共享同一状态，未观测门也不是
+新的自由随机事件。`Z = Σ_x W(x)`；`N = Σ_{x 符合 evidence} W(x)`；
+`Q(q) = Σ_{x 同时符合 evidence 与 query 赋值 q} W(x)`。
+
+- `Z = 0` → `zero_model`：`evidence_probability` 为 null，`joint` 为 `[]`。
+- `Z > 0` 且 `N = 0` → `zero_evidence`：`evidence_probability` 为字符串 `"0"`，`joint` 为 `[]`。
+- 其余 → `ok`：`evidence_probability = N/Z`，每行 `probability = Q(q)/N`；
+  无证据时 `evidence_probability` 为字符串 `"1"`（只要 Z>0）。
+- 两种零状态都仍完整给出 `variables` 与 `audit`；`normalizer` 始终是 Z。
+
+禁止把势函数分别归一化、把共享门当独立变量相乘、把未观测门当成自由随机变量，
+也禁止用各节点边缘概率的列表冒充整组联合分布。
+
+## 消元与结构审计
+
+必须按给定 `elimination_order` 以精确局部因子运算（乘法 + 对变量求和）求出 Z、N 与
+完整联合表，不得展开全部基本事件世界。数值与审计使用同一秩序：
+
+- 审计结构由每事件一元先验因子、每个输入势函数 scope、每门含门及其全部输入的确定性
+  因子建立；所有 scope 内部按 ID 的 **UTF-8 字节序**规范化。
+- 在任何证据约简或数值化简**之前**，依次取含待消元变量的全部因子的 scope 并集为
+  `bucket_scope`；删除这些因子并加入 `bucket_scope` 去掉该变量后的 `residual_scope`；
+  残余为空 scope 时保留为标量因子。最后剩余 scope 的并集为 `final_scope`。
+- `peak_variables` 取初始 scope、每步 `bucket_scope`、每步 `residual_scope` 与
+  `final_scope` 的最大变量数，**不得超过 12**；即使证据使变量固定、势值全零或因子为
+  常数也不缩 scope。超界输入退出 2 并保留旧输出。
+- 消元次序改变桶宽但不改变数值结果；audit 依给定次序逐项记录，因此次序变化会改变 audit。
+
+## 输出契约
+
+报告严格为 `{"schema_version":4,"source_sha256","result"}`，`source_sha256` 是完整输入
+原字节 SHA256。`result` 严格为 `{status,normalizer,evidence_probability,variables,joint,audit}`：
+
+- `variables` 将 query 按 ID 的 UTF-8 字节序排序。
+- `joint` 依此序、False 先于 True 列出全部 `2^len(query)` 行
+  `{"failed", "probability"}`；`failed` 是与 `variables` 对齐的布尔数组；零概率行不可省略。
+- `normalizer` 始终是 Z；概率与 normalizer 均用约分 Fraction 字符串，整数不写分母。
+- `audit` 严格为 `{steps,final_scope,peak_variables}`；`steps` 依给定次序每项为
+  `{variable,bucket_scope,residual_scope}`，所有 scope 均规范排序。
+
+同语义输入重排 tree/factors/evidence/query 数组不改变 result 且报告字节稳定；
+`elimination_order` 仍决定 audit 与宽度准入。输出沿用安全原子替换
+（临时文件 + `os.replace`），输入输出不能同路径，拒绝输出符号链接；失败退出 2 并保留原输出。
