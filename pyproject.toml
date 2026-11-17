@@ -12,5 +12,6 @@ fault-tree = "fault_tree.cli:main"
 fault-history = "fault_tree.history.cli:main"
 fault-diagnose = "fault_tree.diagnose.cli:main"
 fault-factor = "fault_tree.factor.cli:main"
+fault-calibrate = "fault_tree.calibrate.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]

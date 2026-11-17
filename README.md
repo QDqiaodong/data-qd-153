@@ -14,6 +14,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip check
 .venv/bin/fault-tree --source fixtures/input.json --output run/report.json
 .venv/bin/fault-factor --source fixtures/factor/request.json --output run/factor.json
+.venv/bin/fault-calibrate --source fixtures/calibrate/request.json --output run/calibrate.json
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
@@ -91,3 +92,23 @@ query 固定一个已提交代次读取某日分区。完整契约见 docs/contr
 query 为两个相关门：N/Z = 10829/65664，联合表四行分别为 112/221、70/221、24/221、15/221。
 所有概率与 normalizer 为约分 Fraction 字符串（整数不写分母）；零概率行保留。完整契约见
 [docs/contract.md](docs/contract.md)。
+
+# 共享参数组批量 EM 校准 v5
+
+可靠性数据团队持有若干次独立试验的部分节点读数与重复次数，需要把带频次的部分观测转成
+共享参数组的基本事件概率估计表。`fault-calibrate`（或 `python -m fault_tree.calibrate`）
+复用原 `parse_tree` 的 16 事件上限、共享 AND/OR DAG 与全图无环校验，对共享参数组运行题目
+定义的定点 EM：E 步对全部逻辑世界求组成员失败数的条件期望，M 步带每组一份的
+Beta(alpha,beta) 伪计数同时更新；组外事件冻结在 tree 原概率（可为 0/1）。它不识别唯一
+真实参数、不找全局最优、不采样。旧四个入口及结果契约保持不变。
+
+```sh
+.venv/bin/fault-calibrate --source fixtures/calibrate/request.json --output run/calibrate.json
+.venv/bin/python -m fault_tree.calibrate --source fixtures/calibrate/request.json --output run/calibrate.json
+```
+
+自制样例含两个都会移动的参数组（一个双成员共享组、一个单成员组）、一个不在 root 祖先内的
+冻结事件、空证据与门/事件混合读数；逐轮输出参数、加权对数似然、含伪计数目标与最大参数差。
+初始点任一行零质量（逻辑矛盾或被冻结 0/1 事件排除）时正常返回 `unsupported_data`（退出 0），
+不做任何更新，见 fixtures/calibrate/unsupported.json。所有概率为有限 JSON 数，报告字节
+确定，语义等价数组重排不改变 result。完整契约见 [docs/contract.md](docs/contract.md)。

@@ -295,3 +295,100 @@ python -m fault_tree.factor --source FILE --output FILE
 同语义输入重排 tree/factors/evidence/query 数组不改变 result 且报告字节稳定；
 `elimination_order` 仍决定 audit 与宽度准入。输出沿用安全原子替换
 （临时文件 + `os.replace`），输入输出不能同路径，拒绝输出符号链接；失败退出 2 并保留原输出。
+
+# 共享参数组批量 EM 校准 v5
+
+可靠性数据团队只有若干次独立试验的**部分节点读数与重复次数**，需要把它们转成可追踪的
+基本事件概率校准参数表。`fault-calibrate`（或 `python -m fault_tree.calibrate`）在原
+16 事件故障树、共享 AND/OR DAG 与全图校验之上，对**共享参数组**运行题目定义的定点 EM
+迭代；它不识别唯一真实参数、不寻找全局最优、不采样、不调用外部优化库。旧 `fault-tree`、
+`fault-history`、`fault-diagnose`、`fault-factor` 四个入口及结果契约保持不变。
+
+## 命令与退出码
+
+```sh
+fault-calibrate --source FILE --output FILE
+python -m fault_tree.calibrate --source FILE --output FILE
+```
+
+成功退出 0：报告原子写入 FILE，并把同一份报告打印到 stdout（同输入字节确定）。
+`unsupported_data`、`converged`、`max_iterations` 都是正常结束，退出 0；
+解析、计算或 IO 失败退出 2 且保留既有输出。沿用源字节 SHA256、输入/输出同路径拒绝、
+输出符号链接拒绝、8MB 读取上限、重复 JSON 键拒绝、非有限数值拒绝与原子替换。
+
+## 输入契约
+
+顶层严格为 `{"tree","groups","observations","max_iterations","tolerance"}`，各层拒绝
+未知/缺失字段、重复 JSON 键、布尔冒充整数。tree 的 events/gates、门 inputs、groups 及
+其 events、observations 及其 evidence 的语义等价重排不改变 result。
+
+- `tree` 完整交给原 `parse_tree`：基本事件 1..16 个，门 0..100 个，概率为 0..1 的精确
+  有理数，ident、引用、门输入唯一与整图无环规则全部不变。**所有**声明事件（含不在 root
+  祖先中的事件）都参与世界枚举。
+- `groups` 为 1..16 项 `{"id","events","alpha","beta"}`：
+  - `id` 唯一且沿用 ident；`events` 为非空、无重复的已声明**基本事件** ID 数组（不能引用
+    门），所有组的成员互不重叠；允许只覆盖部分事件，组外事件冻结在 tree 原概率（可为 0/1）。
+  - 同组成员初始概率以输入有理数**精确比较相等**，且严格在 (0,1) 内（拒绝 0、1 边界）。
+  - `alpha`、`beta` 为 1..10^6 整数，是**每组各一份**的正伪计数，不是每个成员各一份。
+- `observations` 为 1..128 项 `{"id","count","evidence"}`：`id` 唯一且沿用 ident；
+  `count` 为 1..10^6 整数（拒绝布尔）；`evidence` 为 0..116 项 `{"node","failed"}`，
+  node 为任意已声明事件或门且同一行不重复，`failed` 只能为 JSON 布尔。相同 evidence 可按
+  不同 id 出现，各按自身 count 计权；空 evidence 合法。各行代表不同试验，**不在行间合并
+  证据**；未提及的节点是缺测而非健康。
+- `max_iterations` 为 1..100 整数；`tolerance` 为有限 JSON 数，范围 [1e-12,1e-3]。
+
+## 概率模型与 EM 迭代
+
+组 g 的共享失败概率记为 theta_g，成员数 m_g。每个基本事件仍条件独立：共享参数只约束概率
+相同，**不代表这些事件必须同时失败**（独立重复事件，而非单一共因）；组外事件用原先验。
+对完整基本事件布尔向量 x 取独立 Bernoulli 乘积 P_theta(x)，所有门沿现有 DAG 在同一向量上
+求值。S_i 是满足第 i 行全部 evidence 的世界集合，L_i(theta)=sum_{x in S_i} P_theta(x)，
+C_g(x) 是组 g 中失败基本事件的个数。求和覆盖全部声明事件，不能只检查 root 或仅用观测门的
+边缘概率。
+
+给定旧 theta，E 步对**全部逻辑世界**（含零质量世界，不删除、不夹 epsilon、不把缺测当健康）
+求条件期望：
+
+  T_g = sum_i count_i * sum_{x in S_i} (P_theta(x) * C_g(x)) / L_i(theta)
+
+M 步所有组在同一旧参数向量上算完分子后**同时**替换：
+
+  theta'_g = (alpha_g + T_g) / (alpha_g + beta_g + m_g * sum_i count_i)
+
+组外事件概率全程冻结。
+
+## 初始质量门与 unsupported_data
+
+所有输入语义校验完成后，先在初始 theta 下求每一行 L_i；任一为 0 即正常返回
+`unsupported_data`，列出**全部**零质量行（按 id 的 UTF-8 字节序），`iterations=0`、
+`groups`/`events` 为 null、`observations`/`trace` 为 []，且不进行任何参数更新。
+行内逻辑矛盾、被冻结 0/1 事件排除的读数都属于此状态，不是格式错误。不在 root 祖先内的
+冻结事件若带显式矛盾证据，同样使整行 unsupported，不能因其与 root 无关而忽略。
+
+## 轨迹、收敛与输出契约
+
+每个轨迹点评估
+`ell(theta)=sum_i count_i*log(L_i(theta))`、
+`J(theta)=ell(theta)+sum_g[alpha_g*log(theta_g)+beta_g*log(1-theta_g)]`（自然对数，
+健康支用 log1p 稳定求值）。包含 iteration=0 初值点（其 max_delta 为 null），之后先同时
+更新再按新 theta 重算 ell、J，`delta=max_g abs(theta'_g-theta_g)`。首轮起若 delta<=
+tolerance 即停为 `converged`，该判定优先于同轮达到 max_iterations；否则到轮数上限为
+`max_iterations`。不得仅因目标变化很小、似然下降或四舍五入相等而提前停。逐轮 J 不下降。
+
+报告严格为 `{"schema_version":5,"source_sha256","result"}`，result 恰含
+`status,iterations,groups,events,observations,trace,unsupported_observations`：
+
+- 正常拟合时 iterations 为已执行更新数；`groups` 按 id 的 UTF-8 字节序排列，每项
+  `{"id","events","probability"}`，events 成员也同序；`events` 列全部已声明事件（含冻结
+  项）按 id 同序，每项 `{"id","probability"}`；`observations` 按 id 同序，每项
+  `{"id","probability"}` 给末轮 L_i；`unsupported_observations` 为 []。
+- `trace` 有 iterations+1 项，每项
+  `{"iteration","parameters","log_likelihood","objective","max_delta"}`，parameters 为按
+  组 id 排序的 `{"id","probability"}` 数组。末轮 trace 参数、groups、events 与观测概率
+  必须一致。所有概率、目标与 delta 均为有限 JSON 数（不用 Fraction 字符串）。
+
+数值界是契约的一部分：sum(count)<=128*10^6、每组 m<=16 且 alpha/beta>=1，因此一次更新后
+theta 与 1-theta 均至少为 1/(2*10^6+16*128*10^6)；初始内部概率由原分子分母界也远离
+binary64 舍入端点。E 步对全部逻辑世界求和（binary64 顺序求和即可，不采样、不近似后验、
+不用硬归因代替条件期望）；同 evidence 拆成不同 id、count 总和相等的行给出相同数值轨迹；
+固定 alpha/beta 下整体放大 count 会改变惩罚与数据的相对作用，count 不归一化到和为 1。

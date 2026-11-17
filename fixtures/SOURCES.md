@@ -9,3 +9,8 @@
 - factor/request.json：fault-factor 的 {tree,factors,evidence,query,elimination_order}
   自制样例，含共享 pv_and/ps_and 子门、重叠 scope 的非归一势函数、门与基本事件混合证据，
   query 为两个相关门。旁注 fixture 无真实设备含义。
+- calibrate/request.json：fault-calibrate 的 {tree,groups,observations,max_iterations,
+  tolerance} 自制样例，含双成员共享组与单成员组两个都会更新的参数组、一个不在 root 祖先内
+  的冻结事件、空证据及门/事件混合读数，演示逐轮 EM 轨迹与末轮概率表。
+- calibrate/unsupported.json：同入口的 unsupported_data 自制样例，冻结为 0 的 interlock
+  被要求失败，初始质量为零，正常结束且不做任何参数更新。

@@ -1,0 +1,28 @@
+{
+  "tree": {
+    "events": [
+      {"id": "A", "numerator": 1, "denominator": 4},
+      {"id": "B", "numerator": 1, "denominator": 4},
+      {"id": "C", "numerator": 1, "denominator": 3},
+      {"id": "D", "numerator": 1, "denominator": 5}
+    ],
+    "gates": [
+      {"id": "top", "op": "OR", "inputs": ["A", "B", "C"]}
+    ],
+    "root": "top"
+  },
+  "groups": [
+    {"id": "g1", "events": ["A", "B"], "alpha": 1, "beta": 1},
+    {"id": "g2", "events": ["C"], "alpha": 1, "beta": 1}
+  ],
+  "observations": [
+    {"id": "obs-all-failed", "count": 2,
+     "evidence": [{"node": "A", "failed": true}, {"node": "B", "failed": true},
+                  {"node": "C", "failed": true}]},
+    {"id": "obs-top-healthy", "count": 3,
+     "evidence": [{"node": "top", "failed": false}]},
+    {"id": "obs-empty", "count": 1, "evidence": []}
+  ],
+  "max_iterations": 50,
+  "tolerance": 1e-9
+}

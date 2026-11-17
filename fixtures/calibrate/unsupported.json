@@ -1,0 +1,24 @@
+{
+  "tree": {
+    "events": [
+      {"id": "A", "numerator": 1, "denominator": 2},
+      {"id": "B", "numerator": 1, "denominator": 2},
+      {"id": "interlock", "numerator": 0, "denominator": 1}
+    ],
+    "gates": [
+      {"id": "top", "op": "OR", "inputs": ["A", "B"]}
+    ],
+    "root": "top"
+  },
+  "groups": [
+    {"id": "shared-pair", "events": ["A", "B"], "alpha": 2, "beta": 3}
+  ],
+  "observations": [
+    {"id": "trial-ok", "count": 5,
+     "evidence": [{"node": "top", "failed": true}]},
+    {"id": "trial-unsupported", "count": 2,
+     "evidence": [{"node": "interlock", "failed": true}]}
+  ],
+  "max_iterations": 25,
+  "tolerance": 1e-9
+}
