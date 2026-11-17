@@ -1,0 +1,37 @@
+{
+  "batch_id": "field-report-2026-11-01",
+  "records": [
+    {
+      "sample_id": "probe-a-up",
+      "revision": 1,
+      "op": "put",
+      "event_id": "A",
+      "time": 100,
+      "failed": true
+    },
+    {
+      "sample_id": "probe-b-up",
+      "revision": 1,
+      "op": "put",
+      "event_id": "B",
+      "time": 80000,
+      "failed": true
+    },
+    {
+      "sample_id": "probe-b-down",
+      "revision": 1,
+      "op": "put",
+      "event_id": "B",
+      "time": 175000,
+      "failed": false
+    },
+    {
+      "sample_id": "probe-a-down",
+      "revision": 1,
+      "op": "put",
+      "event_id": "A",
+      "time": 190000,
+      "failed": false
+    }
+  ]
+}

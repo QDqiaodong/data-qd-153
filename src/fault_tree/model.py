@@ -2,7 +2,7 @@ from fractions import Fraction
 from .common import require,ident,number,rows
 from .calculation import enumerate_states
 
-def analyze(data):
+def parse_tree(data):
     require(data,'events gates root');events={};gates={}
     for e in rows(data['events'],16):
         require(e,'id numerator denominator');eid=ident(e['id']);n=number(e['numerator'],0,10**9);d=number(e['denominator'],1,10**9)
@@ -19,4 +19,8 @@ def analyze(data):
         ready=sorted(g for g in pending if set(gates[g]['inputs'])<=resolved)
         if not ready:raise ValueError('cyclic gates')
         order.extend(ready);resolved.update(ready);pending.difference_update(ready)
+    return events,gates,order,root
+
+def analyze(data):
+    events,gates,order,root=parse_tree(data)
     return enumerate_states(events,gates,order,root)

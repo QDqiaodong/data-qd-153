@@ -1,0 +1,10 @@
+{
+  "batch_id": "field-report-2026-11-02",
+  "records": [
+    {
+      "sample_id": "probe-b-down",
+      "revision": 2,
+      "op": "withdraw"
+    }
+  ]
+}
